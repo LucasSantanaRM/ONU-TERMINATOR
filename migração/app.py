@@ -252,5 +252,3 @@ elif menu == "Gerar xlsx":
         st.success("Planilha gerada com sucesso! Clique no botão acima para baixar.")
     else:
         st.warning('Por favor, envie um arquivo JSON para gerar a planilha XLSX.')
-
-    
