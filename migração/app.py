@@ -36,6 +36,13 @@ def connect_olt(ip, user, password, port=22, log_area=None):
             log_area.text(f"Erro ao conectar na OLT {ip}: {e}")  # Log de erro
         st.error(f"Erro ao conectar na OLT: {e}")
         return None
+    
+
+
+    # Primeiro comando: entrar no modo de configuração
+        ssh_client.exec_command("conf t")
+        log_area.text("Executando comando: conf t")  # Log do comando "conf t"
+        time.sleep(1)
 
 # Função para autorizar ONU
 def authorize_onu(ssh_client, gpon_interface, serial, name, vlan, onu_id, log_area):
@@ -60,6 +67,17 @@ def authorize_onu(ssh_client, gpon_interface, serial, name, vlan, onu_id, log_ar
             f"service-port 1 user-vlan {vlan} vlan {vlan}",
             f"exit"
         ]
+  # Executa cada comando sequencialmente
+        for command in commands:
+            stdin, stdout, stderr = ssh_client.exec_command(command)
+            log_area.text(f"Executando comando: {command}")  # Log do comando executado
+            time.sleep(1)
+
+
+
+
+
+
         for command in commands:
             stdin, stdout, stderr = ssh_client.exec_command(command)
             log_area.text(f"Executando comando: {command}")  # Log do comando executado
@@ -171,7 +189,7 @@ if menu == "Migração":
 
                 # Fechar a conexão SSH
                 ssh_client.close()
-                log_area.text("Migração concluída.")
+                log_area.text("Migração executada!! valide se tudo deu certo 😀😀.")
             else:
                 log_area.text("Falha na conexão com a OLT.")
     else:
