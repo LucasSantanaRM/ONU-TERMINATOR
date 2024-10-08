@@ -1,11 +1,12 @@
 import streamlit as st
 import pandas as pd
 import json
-import paramiko
 import time
 from io import BytesIO
 from PIL import Image
 import openpyxl
+import paramiko  # Certifique-se de que paramiko está importado
+from utils import executar_comando_ssh, buscar_pon_olt  # Importando funções do utils.py
 
 # Função para salvar OLTs no arquivo db.json
 def save_olts_to_db(olts):
@@ -20,26 +21,11 @@ def load_olts_from_db():
     except FileNotFoundError:
         return []
 
-# Função para conectar via SSH na OLT ZTE
-def connect_olt(ip, user, password, port=22, log_area=None):
-    try:
-        if log_area:
-            log_area.text(f"Conectando à OLT {ip} via SSH...")
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        client.connect(ip, username=user, password=password, port=port)
-        if log_area:
-            log_area.text(f"Conexão estabelecida com sucesso com a OLT {ip}!")
-        return client
-    except Exception as e:
-        if log_area:
-            log_area.text(f"Erro ao conectar na OLT {ip}: {e}")
-        st.error(f"Erro ao conectar na OLT: {e}")
-        return None
-
+# Função para autorizar ONU
 # Função para autorizar ONU
 def authorize_onu(ssh_client, gpon_interface, serial, name, vlan, onu_id, log_area):
     try:
+        # Extraia informações da ONU
         commands = [
             f"interface {gpon_interface}",
             f"onu {onu_id} type Bridge sn {serial}",
@@ -60,25 +46,25 @@ def authorize_onu(ssh_client, gpon_interface, serial, name, vlan, onu_id, log_ar
             f"service-port 1 user-vlan {vlan} vlan {vlan}",
             "exit"
         ]
-        for command in commands:
-            stdin, stdout, stderr = ssh_client.exec_command(command)
-            log_area.text(f"Executando comando: {command}")
-            time.sleep(1)
-            # Mostrar a saída dos comandos no log
-            output = stdout.read().decode()
-            log_area.text(f"Resultado: {output}")
+
+        # Chamada corrigida para executar_comando_ssh
+        output = executar_comando_ssh(ssh_client, commands)  # Passar o cliente SSH
+        log_area.append(f"Resultado: {output}")
         return True
     except Exception as e:
-        log_area.text(f"Erro ao autorizar ONU: {e}")
+        log_area.append(f"Erro ao autorizar ONU: {e}")
         return False
 
 # Função para testar conexão SSH
-def test_ssh_connection(ip, user, password, port, log_area=None):
-    ssh_client = connect_olt(ip, user, password, port, log_area)
-    if ssh_client:
-        ssh_client.close()
-        return True
-    return False
+def test_ssh_connection(ip, user, password, port):
+    try:
+        ssh_client = paramiko.SSHClient()
+        ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh_client.connect(ip, username=user, password=password, port=port)
+        return ssh_client  # Retorna o cliente SSH
+    except Exception as e:
+        st.error(f"Erro ao conectar na OLT: {e}")
+        return None
 
 # Função para gerar a planilha Excel
 def generate_excel(serials_and_names):
@@ -98,13 +84,8 @@ st.sidebar.title("Menu")
 menu = st.sidebar.radio("Selecione uma opção", ["Migração", "Cadastro de OLTs", "Gerar xlsx"])
 
 if menu == "Migração":
-    # Definir a largura total da página
     page_width = 800
-
-    # Calcular a largura da imagem como 20% da largura total
     image_width = int(page_width * 0.2)
-
-    # Criar colunas com larguras proporcionais
     col1, col2 = st.columns([1, 4])
 
     with col1:
@@ -116,7 +97,6 @@ if menu == "Migração":
 
     st.subheader('Migração de ONUs')
 
-    # Upload de planilha
     uploaded_file = st.file_uploader("Envie a planilha XLSX", type=["xlsx"])
 
     if uploaded_file is not None:
@@ -124,7 +104,6 @@ if menu == "Migração":
         st.write('Visualização da Planilha:')
         st.dataframe(df)
 
-        # Selecionar OLT para conexão
         olt_options = {olt['nome']: olt for olt in olts}
         olt_name = st.selectbox("Selecione a OLT", list(olt_options.keys()))
         olt_selected = olt_options[olt_name]
@@ -135,44 +114,44 @@ if menu == "Migração":
         gpon_interface = st.text_input('GPON Interface (Ex: gpon_olt-1/3/1)')
         vlan = st.text_input('VLAN (Ex: 2003)')
 
-        # Campo de log para exibir mensagens em tempo real
         log_area = st.empty()
+        log_messages = []
 
         if st.button('Iniciar Migração'):
-            # Conectar à OLT via SSH
-            ssh_client = connect_olt(ip, user, password, port, log_area)
+            ssh_client = test_ssh_connection(ip, user, password, port)
 
             if ssh_client:
                 st.info('Conexão estabelecida com sucesso!')
-                log_area.text("Iniciando migração das ONUs...")
+                log_messages.append("Iniciando migração das ONUs...")
 
-                # Loop para autorizar cada ONU da planilha
                 for i, row in df.iterrows():
                     serial = row['Serial']
                     name = row['Name'] if pd.notna(row['Name']) else serial
                     onu_id = i + 1  # Número da ONU na PON (1 a 128)
 
-                    log_area.text(f"Processando ONU {serial} (ONU ID: {onu_id})...")
+                    log_messages.append(f"Processando ONU {serial} (ONU ID: {onu_id})...")
 
-                    success = authorize_onu(ssh_client, gpon_interface, serial, name, vlan, onu_id, log_area)
+                    success = authorize_onu(ssh_client, gpon_interface, serial, name, vlan, onu_id, log_messages)
 
                     if success:
                         st.success(f'ONU {serial} migrada com sucesso!')
                     else:
                         st.error(f'Problema na migração da ONU {serial}')
 
-                # Fechar a conexão SSH
-                ssh_client.close()
-                log_area.text("Migração executada! Valide se tudo deu certo 😀.")
+                    log_area.text("\n".join(log_messages))  # Atualiza a exibição do log
+
+                ssh_client.close()  # Fecha a conexão após a migração
+                log_messages.append("Conexão SSH fechada.")
+                log_area.text("\n".join(log_messages))  # Atualiza a exibição do log final
             else:
-                log_area.text("Falha na conexão com a OLT.")
+                log_messages.append("Falha na conexão com a OLT.")
+                log_area.text("\n".join(log_messages))  # Atualiza a exibição do log
     else:
         st.warning('Por favor, envie uma planilha XLSX para iniciar a migração.')
 
 elif menu == "Cadastro de OLTs":
     st.title('Cadastro de OLTs ZTE')
 
-    # Formulário para cadastro de OLT
     st.subheader('Cadastrar OLT')
     with st.form(key='olt_form'):
         nome = st.text_input('Nome da OLT')
@@ -188,50 +167,43 @@ elif menu == "Cadastro de OLTs":
             save_olts_to_db(olts)
             st.success('OLT cadastrada com sucesso!')
 
-    # Testar conexão
     st.subheader('Testar Conexão com OLT')
     olt_options = {olt['nome']: olt for olt in olts}
     olt_name = st.selectbox("Selecione a OLT", list(olt_options.keys()))
     olt_selected = olt_options[olt_name]
     if st.button('Testar Conexão'):
         log_area = st.empty()
-        if test_ssh_connection(olt_selected['ip'], olt_selected['user'], olt_selected['password'], olt_selected['port'], log_area):
+        if test_ssh_connection(olt_selected['ip'], olt_selected['user'], olt_selected['password'], olt_selected['port']):
             st.success('Conexão OK!')
         else:
             st.error('Sem conexão com o equipamento.')
 
-    # Listar OLTs cadastradas
     st.subheader('OLTs Cadastradas')
     if olts:
         for olt in olts:
-            with st.expander(f"{olt['nome']} - {olt['ip']}"):
-                st.write(f"Nome: {olt['nome']}")
-                st.write(f"IP: {olt['ip']}")
-                st.write(f"Usuário: {olt['user']}")
-                st.write(f"Porta: {olt['port']}")
+            st.write(f"Nome: {olt['nome']}, IP: {olt['ip']}, Usuário: {olt['user']}, Porta: {olt['port']}")
     else:
-        st.warning("Nenhuma OLT cadastrada.")
+        st.info('Nenhuma OLT cadastrada.')
 
 elif menu == "Gerar xlsx":
-    st.title('Gerar Planilha XLSX')
-    
-    # Upload de planilha JSON
-    uploaded_file = st.file_uploader("Envie o arquivo JSON", type=["json"])
+    st.title('Gerar Arquivo XLSX de ONUs')
 
-    if uploaded_file is not None:
-        json_data = json.load(uploaded_file)
-        serials_and_names = [(item['serial'], item['name']) for item in json_data]
-        
-        # Gerar Excel
-        if st.button('Gerar XLSX'):
+    serials_and_names = []
+    with st.form(key='serial_form'):
+        serial = st.text_input('Serial da ONU')
+        name = st.text_input('Nome da ONU')
+        add_serial_button = st.form_submit_button('Adicionar ONU')
+
+        if add_serial_button and serial:
+            serials_and_names.append((serial, name))
+            st.success(f'ONU {serial} adicionada.')
+
+    if st.button('Baixar XLSX'):
+        if serials_and_names:
             wb = generate_excel(serials_and_names)
-            buffer = BytesIO()
-            wb.save(buffer)
-            buffer.seek(0)
-
-            st.download_button(
-                label="Baixar planilha",
-                data=buffer,
-                file_name="serials_and_names.xlsx",
-                mime="application/vnd.ms-excel"
-            )
+            excel_buffer = BytesIO()
+            wb.save(excel_buffer)
+            excel_buffer.seek(0)
+            st.download_button('Baixar Planilha', excel_buffer, 'onudados.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        else:
+            st.warning('Adicione ONUs antes de gerar o arquivo.')
