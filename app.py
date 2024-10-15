@@ -1,106 +1,160 @@
 import paramiko
+import openpyxl
 import logging
-import json
-import sys
-import pandas as pd
+import os
 import time
+from datetime import datetime
+from dotenv import load_dotenv
 
+load_dotenv()
 
-# Configuração do logging
-logging.basicConfig(level=logging.INFO)
+def executar_comando_ssh(comandos):
+    host = os.getenv("OLT_HOST")
+    port = int(os.getenv("OLT_PORT"))
+    username = os.getenv("OLT_USERNAME")
+    password = os.getenv("OLT_PASSWORD")
 
-def process_onu(serial, name, vlan):
     try:
-        # Conectar ao OLT e processar a ONU
-        logging.info(f"Processando ONU: {{'serial': '{serial}', 'name': '{name}'}}")
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(host, port=port, username=username, password=password)
 
-        # Conexão SSH ao OLT
-        # Ajuste as informações de conexão conforme necessário
-        ip_olt = "10.0.0.1"  # Exemplo de IP da OLT
-        username = "admin"
-        password = "password"
-        
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        client.connect(ip_olt, username=username, password=password)
-        logging.info("Conexão SSH estabelecida.")
+        shell = ssh.invoke_shell()
+        output = ""
 
-        # Executar comandos no OLT
-        commands = [
-            'configure terminal',
-            f'show gpon onu state gpon_olt-1/3/3',
-            'exit'
-        ]
-        
-        shell = client.invoke_shell()
-        for command in commands:
-            logging.info(f"Executando comando: {command}")
-            shell.send(command + "\n")
-        
-        # Aguarde um tempo para a execução dos comandos
-        time.sleep(2)
-        
-        # Ler a saída
-        output = shell.recv(65535).decode('utf-8')
-        logging.info(f"Saída completa dos comandos:\n{output}")
+        for comando in comandos:
+            shell.send(f"{comando}\n")
+            time.sleep(0.5)  # Aguardar um pouco entre cada comando
+            while shell.recv_ready():
+                output += shell.recv(1024).decode('utf-8')
 
-        # Análise da saída e processamento da ONU
-        # Exemplo de lógica para determinar o próximo número de ONU
-        # (Ajuste conforme necessário para sua implementação)
-        next_onu_number = 17  # Exemplo fixo; substitua pela lógica real
-
-        logging.info(f"Slot: 1, Pon Card: 3, Pon Port: 3, Próximo ONU Número: {next_onu_number}")
-
-        # Comandos para configurar a ONU
-        config_commands = [
-            f'interface gpon_onu-1/3/3:{next_onu_number}',
-            f'name {name}',
-            f'vport-mode manual',
-            f'tcont 1 profile PLANO-500M',
-            f'gemport 1 tcont 1',
-            f'vport 1 map-type vlan',
-            f'vport-map 1 1 vlan {vlan}',
-            'exit'
-        ]
-
-        for command in config_commands:
-            logging.info(f"Executando configuração: {command}")
-            shell.send(command + "\n")
-
-        # Aguarde novamente para a execução dos comandos
-        time.sleep(2)
-        
-        # Ler a saída da configuração
-        output = shell.recv(65535).decode('utf-8')
-        logging.info(f"Resultado da configuração:\n{output}")
-
-        # Encerrar a conexão
-        client.close()
-        
-        logging.info(f"ONU {serial} autorizada com sucesso!")
-        return {'message': f'ONU {serial} autorizada com sucesso!'}, 200
-
+        ssh.close()
+        logging.info(f"Saída completa dos comandos: {output}")
+        return output
     except Exception as e:
-        logging.error(f"Erro ao processar ONU {serial}: {e}")
-        return {'message': str(e)}, 500
+        logging.error(f"Erro ao conectar à OLT: {e}")
+        return f"Erro: {str(e)}"
 
-def main(vlan, file_path):
-    # Ler a planilha de ONUs
+def buscar_ultimo_onu_numero(pon):
+    comando_listar_onus = [
+        "configure terminal",
+        f"show gpon onu state gpon_olt-{pon}",
+        "exit"
+    ]
+    logging.info(f"Executando comando para buscar o próximo número de ONU disponível na PON: {comando_listar_onus}")
+    
+    resultado_listagem = executar_comando_ssh(comando_listar_onus)
+
+    if resultado_listagem:
+        linhas = resultado_listagem.splitlines()
+        logging.info(f"Resultado da listagem de ONUs: {linhas}")
+
+        numeros_onu_usados = set()
+        for linha in linhas:
+            if "enable" in linha:
+                try:
+                    numero_onu = int(linha.split(":")[1].split()[0])
+                    numeros_onu_usados.add(numero_onu)
+                except (ValueError, IndexError):
+                    logging.warning(f"Não foi possível extrair o número da ONU: {linha}")
+
+        if numeros_onu_usados:
+            # Encontrar o primeiro número disponível
+            for i in range(1, max(numeros_onu_usados) + 2):
+                if i not in numeros_onu_usados:
+                    logging.info(f"Próximo número disponível para ONU: {i}")
+                    return i
+
+    logging.warning(f"Nenhum número de ONU encontrado na PON {pon}, retornando 1")
+    return 1  # Se não houver ONUs, retorna 1 como número inicial
+
+def buscar_pon_olt(serial):
+    comando_verificar_onu = [
+        "configure terminal",
+        "show pon onu uncfg",
+        "exit"
+    ]
+    resultado = executar_comando_ssh(comando_verificar_onu)
+
+    if resultado:
+        for linha in resultado.splitlines():
+            if serial in linha:
+                partes = linha.split()
+                pon = partes[0].replace("gpon_olt-", "")
+                logging.info(f"PON encontrada para o serial {serial}: {pon}")
+                return pon
+    logging.warning(f"PON não encontrada para o serial {serial}")
+    return None
+
+def autorizar_onu(onu):
+    if not onu['pon']:
+        logging.error(f"PON inválida para a ONU {onu['serial']}.")
+        return {"message": "PON inválida."}, 400
+    
+    pon_components = onu['pon'].split('/')
+    if len(pon_components) != 3:
+        logging.error(f"Formato de PON inválido: {onu['pon']}.")
+        return {"message": "Formato de PON inválido."}, 400
+
+    slot, pon_card, pon_port = pon_components
+    ultimo_onu_numero = buscar_ultimo_onu_numero(f"{slot}/{pon_card}/{pon_port}")
+
+    logging.info(f"Slot: {slot}, Pon Card: {pon_card}, Pon Port: {pon_port}, Próximo ONU Número: {ultimo_onu_numero}")
+
+    comandos_autorizacao = [
+        "configure terminal",
+        f"interface gpon_olt-{slot}/{pon_card}/{pon_port}",
+        f"onu {ultimo_onu_numero} type Bridge sn {onu['serial']}",
+        "exit",
+        f"interface gpon_onu-{slot}/{pon_card}/{pon_port}:{ultimo_onu_numero}",
+        f"name {onu['name']}",
+        "vport-mode manual",
+        "tcont 1 profile PLANO-500M",
+        "gemport 1 tcont 1",
+        "vport 1 map-type vlan",
+        "vport-map 1 1 vlan 2003",
+        "exit",
+        f"pon-onu-mng gpon_onu-{slot}/{pon_card}/{pon_port}:{ultimo_onu_numero}",
+        "service 1 gemport 1 vlan 2003",
+        "vlan port eth_0/1 mode tag vlan 2003",
+        "exit",
+        f"interface vport-{slot}/{pon_card}/{pon_port}.{ultimo_onu_numero}:1",
+        "service-port 1 user-vlan 2003 vlan 2003",
+        "exit",
+        "exit"  # Sair do modo de configuração
+    ]
+    
+    resultado_autorizacao = executar_comando_ssh(comandos_autorizacao)
+    logging.info(f"Resultado da autorização: {resultado_autorizacao}")
+
+    if "Error" in resultado_autorizacao:
+        logging.error(f"Erro na autorização da ONU: {resultado_autorizacao}")
+        return {"message": f"Erro na autorização da ONU: {resultado_autorizacao}"}, 500
+    else:
+        return {"message": f"ONU {onu['serial']} autorizada com sucesso!"}, 200
+
+def processar_planilha(arquivo_excel):
     try:
-        df = pd.read_excel(file_path)
-        for index, row in df.iterrows():
-            serial = row['Serial']
-            name = row['Name']
-            process_onu(serial, name, vlan)
+        workbook = openpyxl.load_workbook(arquivo_excel)
+        sheet = workbook.active
+        for row in sheet.iter_rows(min_row=2, values_only=True):
+            serial, name = row
+            logging.info(f"Lendo linha da planilha: Serial={serial}, Name={name}")
+            if serial and name:
+                pon = buscar_pon_olt(serial)
+                if pon:
+                    onu = {'serial': serial, 'name': name, 'pon': pon}
+                    logging.info(f"Processando ONU: {onu}")
+                    resposta = autorizar_onu(onu)
+                    logging.info(resposta)
+                else:
+                    logging.warning(f"Serial {serial} não encontrado.")
+            else:
+                logging.warning(f"Dados inválidos na linha: {row}")
     except Exception as e:
-        logging.error(f"Erro ao ler o arquivo {file_path}: {e}")
-        return {'message': str(e)}, 500
+        logging.error(f"Erro ao processar a planilha: {e}")
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
-        print("Uso: python3 app.py <vlan> <arquivo_excel>")
-        sys.exit(1)
-
-    vlan = sys.argv[1]
-    file_path = sys.argv[2]
-    main(vlan, file_path)
+    logging.basicConfig(level=logging.INFO)
+    arquivo_excel = "teste2.xlsx"
+    processar_planilha(arquivo_excel)
