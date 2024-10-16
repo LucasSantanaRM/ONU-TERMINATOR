@@ -136,18 +136,18 @@ def autorizar_onu(onu):
 
 def processar_planilha(arquivo_excel):
     try:
-        # Usa pandas para ler o arquivo Excel
         df = pd.read_excel(arquivo_excel)
         
-        # Verifica se as colunas necessárias existem
         if 'Serial' not in df.columns or 'Name' not in df.columns:
             logging.error("A planilha não contém as colunas 'Serial' e 'Name' necessárias.")
-            return
+            return {"error": "Colunas obrigatórias não encontradas na planilha."}
 
         total_onus = len(df)
         processadas = 0
         sucessos = 0
         falhas = 0
+        sucessos_list = []
+        falhas_list = []
 
         for index, row in df.iterrows():
             serial = row['Serial']
@@ -162,20 +162,30 @@ def processar_planilha(arquivo_excel):
                     resposta, status_code = autorizar_onu(onu)
                     if status_code == 200:
                         sucessos += 1
+                        sucessos_list.append(onu)
                     else:
                         falhas += 1
+                        falhas_list.append(onu)
                     logging.info(f"Resultado: {resposta}")
                 else:
                     logging.warning(f"PON não encontrada para o serial {serial}")
                     falhas += 1
+                    falhas_list.append({'serial': serial, 'name': name})
             else:
                 logging.warning(f"Dados inválidos na linha {index + 2}: Serial={serial}, Name={name}")
                 falhas += 1
+                falhas_list.append({'serial': serial, 'name': name})
             
             processadas += 1
 
         logging.info(f"Processamento concluído. Total: {total_onus}, Sucessos: {sucessos}, Falhas: {falhas}")
-        return {"total": total_onus, "sucessos": sucessos, "falhas": falhas}
+        return {
+            "total": total_onus,
+            "sucessos": sucessos,
+            "falhas": falhas,
+            "sucessos_list": sucessos_list,
+            "falhas_list": falhas_list
+        }
 
     except Exception as e:
         logging.error(f"Erro ao processar a planilha: {e}")
