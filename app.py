@@ -1,4 +1,5 @@
 import paramiko
+import pandas as pd
 import openpyxl
 import logging
 import os
@@ -135,26 +136,53 @@ def autorizar_onu(onu):
 
 def processar_planilha(arquivo_excel):
     try:
-        workbook = openpyxl.load_workbook(arquivo_excel)
-        sheet = workbook.active
-        for row in sheet.iter_rows(min_row=2, values_only=True):
-            serial, name = row
-            logging.info(f"Lendo linha da planilha: Serial={serial}, Name={name}")
-            if serial and name:
+        # Usa pandas para ler o arquivo Excel
+        df = pd.read_excel(arquivo_excel)
+        
+        # Verifica se as colunas necessárias existem
+        if 'Serial' not in df.columns or 'Name' not in df.columns:
+            logging.error("A planilha não contém as colunas 'Serial' e 'Name' necessárias.")
+            return
+
+        total_onus = len(df)
+        processadas = 0
+        sucessos = 0
+        falhas = 0
+
+        for index, row in df.iterrows():
+            serial = row['Serial']
+            name = row['Name']
+            
+            logging.info(f"Processando ONU {processadas + 1}/{total_onus}: Serial={serial}, Name={name}")
+            
+            if pd.notna(serial) and pd.notna(name):
                 pon = buscar_pon_olt(serial)
                 if pon:
                     onu = {'serial': serial, 'name': name, 'pon': pon}
-                    logging.info(f"Processando ONU: {onu}")
-                    resposta = autorizar_onu(onu)
-                    logging.info(resposta)
+                    resposta, status_code = autorizar_onu(onu)
+                    if status_code == 200:
+                        sucessos += 1
+                    else:
+                        falhas += 1
+                    logging.info(f"Resultado: {resposta}")
                 else:
-                    logging.warning(f"Serial {serial} não encontrado.")
+                    logging.warning(f"PON não encontrada para o serial {serial}")
+                    falhas += 1
             else:
-                logging.warning(f"Dados inválidos na linha: {row}")
+                logging.warning(f"Dados inválidos na linha {index + 2}: Serial={serial}, Name={name}")
+                falhas += 1
+            
+            processadas += 1
+
+        logging.info(f"Processamento concluído. Total: {total_onus}, Sucessos: {sucessos}, Falhas: {falhas}")
+        return {"total": total_onus, "sucessos": sucessos, "falhas": falhas}
+
     except Exception as e:
         logging.error(f"Erro ao processar a planilha: {e}")
+        return {"error": str(e)}
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    arquivo_excel = "teste2.xlsx"
-    processar_planilha(arquivo_excel)
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    arquivo_excel = "planilha_onus.xlsx"
+    resultado = processar_planilha(arquivo_excel)
+    print(resultado)
