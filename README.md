@@ -1,5 +1,8 @@
 # Migração de ONUs para OLT ZTE
-![image](https://github.com/user-attachments/assets/8c2cb40e-4e27-4103-b264-708c4b4f4387)
+![ZTE TERMINATOR MIGRAÇÃO](https://github.com/user-attachments/assets/e97ad29d-3f5a-41c0-8a0e-a3e57b265b4a)
+
+![clientes](https://github.com/user-attachments/assets/9c50099b-b207-4597-8faa-75b351648a73)
+
 
 
 Este projeto foi desenvolvido para resolver um problema na empresa atual, que frequentemente precisava migrar ONUs de uma OLT antiga para uma OLT ZTE. A aplicação oferece uma interface intuitiva para facilitar a migração de dados, permitindo o upload de planilhas e a visualização de logs do processo.
@@ -11,7 +14,10 @@ Este projeto foi desenvolvido para resolver um problema na empresa atual, que fr
 - **Gerar Planilha XLSX**: A função de gerar planilhas XLSX a partir de arquivos JSON (ainda em desenvolvimento).
 - **Logs detalhados**: Acompanhe o progresso da migração através dos logs exibidos na interface.
 
-  ![image](https://github.com/user-attachments/assets/99ae5bd1-b4aa-403c-be14-59e152855417)
+ ![gerando xlsx](https://github.com/user-attachments/assets/e6b4ebbc-2f8d-4e42-b5c2-fe3fdb70fd45)
+ ![formato da planilha](https://github.com/user-attachments/assets/5db75ebe-ece5-447c-92a2-7fb43fad7704)
+
+
 
 
 ## Tecnologias Utilizadas
