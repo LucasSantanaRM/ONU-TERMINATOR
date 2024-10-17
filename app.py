@@ -25,7 +25,7 @@ def executar_comando_ssh(comandos):
 
         for comando in comandos:
             shell.send(f"{comando}\n")
-            time.sleep(0.5)  # Aguardar um pouco entre cada comando
+            time.sleep(0.5)  # Delay para os comandos nao explodir a OLT
             while shell.recv_ready():
                 output += shell.recv(1024).decode('utf-8')
 
@@ -60,14 +60,14 @@ def buscar_ultimo_onu_numero(pon):
                     logging.warning(f"Não foi possível extrair o número da ONU: {linha}")
 
         if numeros_onu_usados:
-            # Encontrar o primeiro número disponível
+            # Encontrar o primeiro número disponível para servir de ID para onu ( isso é trabalhosooo aaa)
             for i in range(1, max(numeros_onu_usados) + 2):
                 if i not in numeros_onu_usados:
                     logging.info(f"Próximo número disponível para ONU: {i}")
                     return i
 
     logging.warning(f"Nenhum número de ONU encontrado na PON {pon}, retornando 1")
-    return 1  # Se não houver ONUs, retorna 1 como número inicial
+    return 1  # Se não houver ONUs, retorna 1 como número inicial e continua a brincadeira
 
 def buscar_pon_olt(serial):
     comando_verificar_onu = [
@@ -122,7 +122,7 @@ def autorizar_onu(onu):
         f"interface vport-{slot}/{pon_card}/{pon_port}.{ultimo_onu_numero}:1",
         "service-port 1 user-vlan 2003 vlan 2003",
         "exit",
-        "exit"  # Sair do modo de configuração
+        "exit"  # missao cumprida exit
     ]
     
     resultado_autorizacao = executar_comando_ssh(comandos_autorizacao)

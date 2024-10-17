@@ -6,17 +6,17 @@ import logging
 from io import StringIO
 from PIL import Image
 
-# Configuração da página com favicon personalizado
+# Configuração da página com favicon personalizado podendo ser icone ou um png que esteja em /assets
 st.set_page_config(page_title="Migração de ONUs", page_icon="🚀", layout="wide")
 
-# Adicione o diretório do script ao PATH para importar o app.py
+# diretório do script ao PATH para importar o app.py
 sys.path.append(os.path.dirname(__file__))
 import app
 
-# Configuração do logging
+# Configuração do logging pra ver a bagaceira
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Função para criar o rodapé
+# Função para criar o rodapé frufru
 def footer():
     st.markdown(
         """
@@ -72,27 +72,27 @@ if page == "Migração de ONUs":
     if uploaded_file is not None:
         st.success("Arquivo carregado com sucesso! ✅")
         
-        # Exibir preview dos dados
+        # Exibir preview dos dados da planilha
         df = pd.read_excel(uploaded_file)
         st.write("Preview dos dados:")
         st.dataframe(df)
 
         if st.button("Iniciar Migração 🔄"):
             st.info("Iniciando processo de migração... ⏳")
-            # Salvar o arquivo temporariamente
+            # Salvar o arquivo temporariamente no diretorio do script
             with open("temp_planilha.xlsx", "wb") as f:
                 f.write(uploaded_file.getvalue())
             
-            # Configurar captura de logs
+            # captura de logs
             log_capture_string = StringIO()
             ch = logging.StreamHandler(log_capture_string)
             ch.setLevel(logging.INFO)
             logging.getLogger().addHandler(ch)
 
-            # Processar a planilha
+            # Processar a planilha e entender a situação BO
             resultado = app.processar_planilha("temp_planilha.xlsx")
 
-            # Remover o arquivo temporário
+            # Remover o arquivo temporário pra evitar dor de cabeça posterior
             os.remove("temp_planilha.xlsx")
 
             # Exibir resultados
@@ -137,5 +137,5 @@ elif page == "Gerar XLSX":
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     )
 
-# Adicionar o rodapé
+#  rodapé frufru
 footer()
