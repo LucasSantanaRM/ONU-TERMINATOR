@@ -1,0 +1,6 @@
+streamlit
+pandas
+paramiko
+openpyxl
+python-dotenv
+Pillow

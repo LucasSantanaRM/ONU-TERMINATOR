@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    ports:
+      - "8501:8501"
+    volumes:
+      - .:/app
+    environment:
+      - OLT_HOST=${OLT_HOST}
+      - OLT_PORT=${OLT_PORT}
+      - OLT_USERNAME=${OLT_USERNAME}
+      - OLT_PASSWORD=${OLT_PASSWORD}
