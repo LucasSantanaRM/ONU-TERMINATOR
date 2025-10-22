@@ -25,9 +25,30 @@ def executar_comando_ssh(comandos):
 
         for comando in comandos:
             shell.send(f"{comando}\n")
-            time.sleep(0.5)  # Delay para os comandos nao explodir a OLT
-            while shell.recv_ready():
-                output += shell.recv(1024).decode('utf-8')
+            time.sleep(1)  # Delay maior para dar tempo ao comando executar
+            
+            # Ler toda a saída disponível e lidar com paginação
+            max_attempts = 10
+            attempt = 0
+            while attempt < max_attempts:
+                if shell.recv_ready():
+                    chunk = shell.recv(4096).decode('utf-8')
+                    output += chunk
+                    
+                    # Se encontrar "--More--", enviar espaço para continuar
+                    if "--More--" in chunk:
+                        shell.send(" ")
+                        time.sleep(0.5)
+                    else:
+                        time.sleep(0.3)
+                else:
+                    break
+                attempt += 1
+
+        # Aguardar um pouco mais para garantir que toda a saída foi recebida
+        time.sleep(1)
+        if shell.recv_ready():
+            output += shell.recv(4096).decode('utf-8')
 
         ssh.close()
         logging.info(f"Saída completa dos comandos: {output}")
@@ -79,7 +100,7 @@ def buscar_pon_olt(serial):
 
     if resultado:
         for linha in resultado.splitlines():
-            if serial in linha:
+            if serial.upper() in linha.upper():
                 partes = linha.split()
                 pon = partes[0].replace("gpon_olt-", "")
                 logging.info(f"PON encontrada para o serial {serial}: {pon}")

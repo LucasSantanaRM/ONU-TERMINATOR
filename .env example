@@ -1,4 +1,0 @@
-OLT_HOST="IP"
-OLT_PORT=22
-OLT_USERNAME="user"
-OLT_PASSWORD="password"
